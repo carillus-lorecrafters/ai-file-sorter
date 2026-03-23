@@ -533,6 +533,7 @@ MainApp::MainApp(Settings& settings, bool development_mode, QWidget* parent)
     start_updater();
 #endif
     load_settings();
+    rebuild_drive_clients();
     set_app_icon();
 }
 
@@ -1407,7 +1408,7 @@ void MainApp::on_analyze_clicked()
     }
 
     const std::string folder_path = get_folder_path();
-    if (!Utils::is_valid_directory(folder_path.c_str())) {
+    if (!is_drive_mode() && !Utils::is_valid_directory(folder_path.c_str())) {
         show_error_dialog(ERR_INVALID_PATH);
         core_logger->warn("User supplied invalid directory '{}'", folder_path);
         return;
@@ -2753,10 +2754,23 @@ void MainApp::perform_analysis()
             }
         }
         const auto scan_options = effective_scan_options();
-        files_to_categorize = results_coordinator.find_files_to_categorize(directory_path,
-                                                                           scan_options,
-                                                                           cached_file_names,
-                                                                           use_full_path_keys);
+        if (is_drive_mode()) {
+            // In Drive mode, enumerate via gws. Cache keys use file_name only
+            // (Drive file IDs are per-file, not per-folder, so path-based keys
+            // don't align with the folder-scoped cache).
+            const auto all_drive_entries = scan_drive_entries();
+            files_to_categorize.clear();
+            for (const auto& entry : all_drive_entries) {
+                if (cached_file_names.find(entry.file_name) == cached_file_names.end()) {
+                    files_to_categorize.push_back(entry);
+                }
+            }
+        } else {
+            files_to_categorize = results_coordinator.find_files_to_categorize(directory_path,
+                                                                               scan_options,
+                                                                               cached_file_names,
+                                                                               use_full_path_keys);
+        }
         if (process_images_only || process_documents_only) {
             const bool allow_images = process_images_only;
             const bool allow_documents = process_documents_only;
@@ -3810,12 +3824,15 @@ void MainApp::perform_analysis()
                                   pending_renames.end());
         }
 
-        const auto actual_files = results_coordinator.list_directory(get_folder_path(), scan_options);
-        new_files_to_sort = results_coordinator.compute_files_to_sort(get_folder_path(),
-                                                                      scan_options,
-                                                                      actual_files,
-                                                                      review_entries,
-                                                                      settings.get_include_subdirectories());
+        const auto actual_files = is_drive_mode()
+            ? scan_drive_entries()
+            : results_coordinator.list_directory(get_folder_path(), scan_options);
+        new_files_to_sort = results_coordinator.compute_files_to_sort(
+            is_drive_mode() ? std::string() : get_folder_path(),
+            scan_options,
+            actual_files,
+            review_entries,
+            settings.get_include_subdirectories());
         core_logger->debug("{} file(s) queued for sorting after analysis.",
                            new_files_to_sort.size());
 
@@ -4159,8 +4176,24 @@ void MainApp::show_results_dialog(const std::vector<CategorizedFile>& results)
                                                                        undo_dir,
                                                                        settings.get_category_language(),
                                                                        this);
+        if (is_drive_mode() && drive_file_ops_) {
+            DriveFileOperations* ops = drive_file_ops_.get();
+            categorization_dialog->enable_drive_mode(
+                [ops](const std::string& drive_id,
+                      const std::string& new_name,
+                      const std::string& category,
+                      const std::string& subcategory,
+                      bool use_subcategory) -> bool {
+                    if (category.empty()) {
+                        // rename-only
+                        return ops->rename_file(drive_id, new_name);
+                    }
+                    return ops->move_to_category(drive_id, "", new_name,
+                                                  category, subcategory, use_subcategory);
+                });
+        }
         categorization_dialog->show_results(results,
-                                            get_folder_path(),
+                                            is_drive_mode() ? std::string() : get_folder_path(),
                                             settings.get_include_subdirectories(),
                                             settings.get_offer_rename_images(),
                                             settings.get_offer_rename_documents());
@@ -4250,4 +4283,45 @@ void MainApp::closeEvent(QCloseEvent* event)
     stop_running_analysis();
     save_settings();
     QMainWindow::closeEvent(event);
+}
+
+
+// ---- Google Drive helpers ----
+
+void MainApp::rebuild_drive_clients()
+{
+    gws_client_ = std::make_unique<GwsClient>(
+        settings.get_gws_binary_path(),
+        settings.get_gws_credentials_file());
+    drive_scanner_ = std::make_unique<DriveFileScanner>(
+        *gws_client_,
+        settings.get_drive_page_delay_ms());
+    drive_file_ops_ = std::make_unique<DriveFileOperations>(
+        *gws_client_,
+        settings.get_drive_root_folder_id());
+    drive_mode_active_ = settings.get_use_google_drive();
+}
+
+bool MainApp::is_drive_mode() const
+{
+    return drive_mode_active_
+        && gws_client_
+        && drive_scanner_
+        && drive_file_ops_;
+}
+
+std::vector<FileEntry> MainApp::scan_drive_entries() const
+{
+    if (!drive_scanner_) {
+        return {};
+    }
+    const std::string folder_id = settings.get_drive_root_folder_id();
+    try {
+        return drive_scanner_->list_files(folder_id.empty() ? "root" : folder_id);
+    } catch (const std::exception& ex) {
+        if (core_logger) {
+            core_logger->error("Drive scan failed: {}", ex.what());
+        }
+        return {};
+    }
 }

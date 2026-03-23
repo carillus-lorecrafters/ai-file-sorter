@@ -422,6 +422,19 @@ public:
      */
     void set_development_prompt_logging(bool value);
 
+    // --- Google Drive integration ---
+
+    bool get_use_google_drive() const;
+    void set_use_google_drive(bool value);
+    std::string get_gws_binary_path() const;
+    void set_gws_binary_path(const std::string& path);
+    std::string get_gws_credentials_file() const;
+    void set_gws_credentials_file(const std::string& path);
+    std::string get_drive_root_folder_id() const;
+    void set_drive_root_folder_id(const std::string& folder_id);
+    int get_drive_page_delay_ms() const;
+    void set_drive_page_delay_ms(int ms);
+
     /**
      * @brief Resolves the full path to the active `config.ini` file.
      * @return Platform-appropriate config file path.
@@ -615,6 +628,13 @@ private:
     std::string active_custom_llm_id;
     std::vector<CustomApiEndpoint> custom_api_endpoints;
     std::string active_custom_api_id;
+
+    // Google Drive integration
+    bool use_google_drive{false};
+    std::string gws_binary_path{"gws"};
+    std::string gws_credentials_file;
+    std::string drive_root_folder_id;
+    int drive_page_delay_ms{100};
 };
 
 #endif

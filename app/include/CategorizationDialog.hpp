@@ -8,6 +8,7 @@
 #include <QDialog>
 #include <QStandardItemModel>
 
+#include <functional>
 #include <memory>
 #include <optional>
 #include <tuple>
@@ -41,6 +42,25 @@ public:
     void test_trigger_undo();
     bool test_undo_enabled() const;
 #endif
+
+    /**
+     * @brief Callback type for Drive file move/rename operations.
+     *
+     * Parameters: drive_file_id, new_file_name, category, subcategory,
+     *             use_subcategory. Returns true on success.
+     */
+    using DriveMoveFn = std::function<bool(const std::string& drive_file_id,
+                                           const std::string& new_name,
+                                           const std::string& category,
+                                           const std::string& subcategory,
+                                           bool use_subcategory)>;
+
+    /**
+     * @brief Enable Drive mode — file moves go through the provided callback
+     *        instead of the local MovableCategorizedFile logic.
+     * @param move_fn Callback that performs the Drive API move/rename.
+     */
+    void enable_drive_mode(DriveMoveFn move_fn);
 
     bool is_dialog_valid() const;
     void show_results(const std::vector<CategorizedFile>& categorized_files,
@@ -252,6 +272,8 @@ private:
     bool suppress_item_changed_{false};
     std::string undo_dir_;
     std::string base_dir_;
+
+    DriveMoveFn drive_move_fn_;
 };
 
 #endif // CATEGORIZATIONDIALOG_HPP

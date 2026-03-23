@@ -343,6 +343,13 @@ void Settings::load_basic_settings(const std::function<bool(const char*, bool)>&
     category_language = categoryLanguageFromString(QString::fromStdString(config.getValue("Settings", "CategoryLanguage", "English")));
     categorized_file_count = load_int("CategorizedFileCount", 0, 0);
     next_support_prompt_threshold = load_int("SupportPromptThreshold", 50, 50);
+
+    // Google Drive
+    use_google_drive = load_bool("UseGoogleDrive", false);
+    gws_binary_path = config.getValue("GoogleDrive", "GwsBinaryPath", "gws");
+    gws_credentials_file = config.getValue("GoogleDrive", "CredentialsFile", "");
+    drive_root_folder_id = config.getValue("GoogleDrive", "RootFolderId", "");
+    drive_page_delay_ms = parse_int_or(config.getValue("GoogleDrive", "PageDelayMs", "100"), 100);
 }
 
 void Settings::load_whitelist_settings(const std::function<bool(const char*, bool)>& load_bool)
@@ -463,6 +470,14 @@ void Settings::save_core_settings()
     config.setValue(settings_section, "CategoryLanguage", categoryLanguageToString(category_language).toStdString());
     config.setValue(settings_section, "CategorizedFileCount", std::to_string(categorized_file_count));
     config.setValue(settings_section, "SupportPromptThreshold", std::to_string(next_support_prompt_threshold));
+
+    // Google Drive
+    set_bool_setting(config, settings_section, "UseGoogleDrive", use_google_drive);
+    static const std::string drive_section = "GoogleDrive";
+    config.setValue(drive_section, "GwsBinaryPath", gws_binary_path);
+    set_optional_setting(config, drive_section, "CredentialsFile", gws_credentials_file);
+    set_optional_setting(config, drive_section, "RootFolderId", drive_root_folder_id);
+    config.setValue(drive_section, "PageDelayMs", std::to_string(drive_page_delay_ms));
 }
 
 void Settings::save_whitelist_settings()
@@ -518,6 +533,17 @@ void Settings::save_custom_api_endpoints()
     }
     config.setValue(api_section, "CustomApiIds", join_list(ids));
 }
+
+bool Settings::get_use_google_drive() const { return use_google_drive; }
+void Settings::set_use_google_drive(bool value) { use_google_drive = value; }
+std::string Settings::get_gws_binary_path() const { return gws_binary_path; }
+void Settings::set_gws_binary_path(const std::string& path) { gws_binary_path = path; }
+std::string Settings::get_gws_credentials_file() const { return gws_credentials_file; }
+void Settings::set_gws_credentials_file(const std::string& path) { gws_credentials_file = path; }
+std::string Settings::get_drive_root_folder_id() const { return drive_root_folder_id; }
+void Settings::set_drive_root_folder_id(const std::string& folder_id) { drive_root_folder_id = folder_id; }
+int Settings::get_drive_page_delay_ms() const { return drive_page_delay_ms; }
+void Settings::set_drive_page_delay_ms(int ms) { drive_page_delay_ms = ms; }
 
 std::string Settings::define_config_path()
 {

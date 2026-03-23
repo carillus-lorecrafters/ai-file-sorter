@@ -1,6 +1,7 @@
 #include "CategorizationDialog.hpp"
 
 #include "DatabaseManager.hpp"
+#include "DriveFileScanner.hpp"
 #include "Logger.hpp"
 #include "MovableCategorizedFile.hpp"
 #include "TestHooks.hpp"
@@ -270,6 +271,11 @@ void reset_categorization_move_probe() {
 }
 
 } // namespace TestHooks
+
+void CategorizationDialog::enable_drive_mode(DriveMoveFn move_fn)
+{
+    drive_move_fn_ = std::move(move_fn);
+}
 
 CategorizationDialog::CategorizationDialog(DatabaseManager* db_manager,
                                            bool show_subcategory_col,
@@ -1657,6 +1663,58 @@ void CategorizationDialog::handle_selected_row(int row_index,
             file_name
         });
         update_status_column(row_index, true, true, rename_active, !rename_only);
+        return;
+    }
+
+    // --- Drive mode: bypass all local filesystem operations ---
+    if (drive_move_fn_) {
+        const std::string drive_id = DriveFileScanner::extract_file_id(source_dir);
+        if (drive_id.empty()) {
+            update_status_column(row_index, false);
+            files_not_moved.push_back(file_name);
+            if (core_logger) {
+                core_logger->warn("Drive mode: no file ID in source_dir '{}' for '{}'",
+                                  source_dir, file_name);
+            }
+            return;
+        }
+        const std::string effective_subcategory = subcategory.empty() ? category : subcategory;
+        if (dry_run) {
+            std::string dest_display;
+            if (rename_only) {
+                dest_display = "Google Drive (same folder) / " + destination_name;
+            } else {
+                dest_display = "Google Drive / " + category;
+                if (show_subcategory_column && !effective_subcategory.empty() &&
+                    effective_subcategory != category) {
+                    dest_display += " / " + effective_subcategory;
+                }
+                dest_display += " / " + destination_name;
+            }
+            set_preview_status(row_index, dest_display);
+            dry_run_plan_.push_back(PreviewRecord{
+                source_dir + "/" + file_name,
+                dest_display,
+                file_name,
+                destination_name,
+                rename_only ? std::string() : category,
+                rename_only ? std::string() : effective_subcategory,
+                show_subcategory_column && !rename_only,
+                rename_only});
+            return;
+        }
+        const bool ok = drive_move_fn_(
+            drive_id,
+            destination_name,
+            rename_only ? std::string() : category,
+            rename_only ? std::string() : effective_subcategory,
+            show_subcategory_column && !rename_only);
+        update_status_column(row_index, ok, true, rename_active && ok, !rename_only && ok);
+        if (!ok) {
+            files_not_moved.push_back(file_name);
+        } else if (rename_active) {
+            apply_successful_rename();
+        }
         return;
     }
 

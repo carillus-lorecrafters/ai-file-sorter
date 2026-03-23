@@ -8,6 +8,9 @@
 #include "ConsistencyPassService.hpp"
 #include "ResultsCoordinator.hpp"
 #include "FileScanner.hpp"
+#include "GwsClient.hpp"
+#include "DriveFileScanner.hpp"
+#include "DriveFileOperations.hpp"
 #include "ILLMClient.hpp"
 #include "Settings.hpp"
 #include "WhitelistStore.hpp"
@@ -224,6 +227,9 @@ private:
     void maybe_show_suitability_benchmark();
 
     std::unique_ptr<ILLMClient> make_llm_client();
+    void rebuild_drive_clients();
+    bool is_drive_mode() const;
+    std::vector<FileEntry> scan_drive_entries() const;
     void notify_recategorization_reset(const std::vector<CategorizedFile>& entries,
                                        const std::string& reason);
     void notify_recategorization_reset(const CategorizedFile& entry,
@@ -248,6 +254,12 @@ private:
     DatabaseManager db_manager;
     FileScanner dirscanner;
     bool using_local_llm{false};
+
+    // Google Drive
+    std::unique_ptr<GwsClient> gws_client_;
+    std::unique_ptr<DriveFileScanner> drive_scanner_;
+    std::unique_ptr<DriveFileOperations> drive_file_ops_;
+    bool drive_mode_active_{false};
 
     std::vector<CategorizedFile> already_categorized_files;
     std::vector<CategorizedFile> new_files_with_categories;
